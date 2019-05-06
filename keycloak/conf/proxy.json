@@ -1,0 +1,26 @@
+{
+    "target-url": "${env.TARGET_URL}",
+    "bind-address": "${env.BIND_ADDRESS}",
+    "http-port": "${env.HTTP_PORT}",
+    "applications": [
+        {
+            "base-path": "${env.BASE_PATH}",
+			"proxy-address-forwarding" : true,
+            "adapter-config": {
+                "realm": "${env.REALM_NAME}",
+                "auth-server-url": "${env.AUTH_SERVER_URL}",
+                "public-client": true,
+                "resource": "${env.CLIENT_ID}",
+                "ssl-required": "${env.SSL_REQUIRED}"
+            },
+			"constraints": [
+				{
+					"pattern": "/*",
+                    "roles-allowed": [
+                        "${env.ROLE_ALLOWED}"
+                    ]
+				}
+			]
+        }
+    ]
+}

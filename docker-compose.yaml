@@ -1,0 +1,214 @@
+# === Copyright
+#
+# Copyright (C) 2019  Atos Spain SA. All rights reserved.
+#
+# === License
+#
+# docker-compose.yaml is free software: you can redistribute it and/or modify it under the 
+# terms of the Apache License, Version 2.0 (the License);
+# 
+# http://www.apache.org/licenses/LICENSE-2.0
+# 
+# The software is provided "AS IS", without any warranty of any kind, express or implied,
+# including but not limited to the warranties of merchantability, fitness for a particular
+# purpose and noninfringement, in no event shall the authors or copyright holders be 
+# liable for any claim, damages or other liability, whether in action of contract, tort or
+# otherwise, arising from, out of or in connection with the software or the use or other
+# dealings in the software.
+# 
+# See README file for the full disclaimer information and LICENSE file for full license 
+# information in the project root.
+# 
+# == docker-compose.yml
+#
+# Service composition to deploy the microservices architecture with nginx, keycloak, ELK, 
+# elastalert and keycloak-proxy to protect kibana.
+#
+# === Authors
+#
+# Author	Carlos Cavero
+#			Atos Research and Innovation, Atos SPAIN SA
+# 
+
+version: '3'
+
+services:
+# The reverse proxy providing https and redirecting to the rest of the services
+  nginx-proxy:
+    image: jwilder/nginx-proxy
+    container_name: nginx-proxy
+#    labels:
+#      com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy: "true"
+    volumes:
+# Valid certificates configuration
+#      - ${CONFIG_ROOT_FOLDER}/certs:/etc/nginx/certs 
+# Letsencrypt certificates configuration
+#      - certs:/etc/nginx/certs
+#      - vhost.d:/etc/nginx/vhost.d
+#      - nginx:/usr/share/nginx/html
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    network_mode: host
+    ports:
+# Production configuration
+#      - 443:443
+      - 80:80
+    restart: always
+# Letsencrypt nginx certificates provider
+#  letsencrypt-nginx-proxy-companion:
+#    image: jrcs/letsencrypt-nginx-proxy-companion:v1.9.1
+#    depends_on:
+#      - nginx-proxy
+#    volumes:
+#      - certs:/etc/nginx/certs
+#      - vhost.d:/etc/nginx/vhost.d
+#      - nginx:/usr/share/nginx/html
+#      - /var/run/docker.sock:/tmp/docker.sock:ro
+# MySQL database for KeyCloak
+  mysql:
+    image: mysql:5.7
+    container_name: mysql
+    volumes:
+      - ${CONFIG_FOLDER}/mysql/data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DB}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    healthcheck:
+        test: ["CMD-SHELL", "mysqladmin -h 'localhost' -u root -p${MYSQL_ROOT_PASSWORD} ping --silent"]
+        interval: 30s
+        timeout: 30s
+        retries: 3
+    restart: always
+# KeyCloak IdM configured for MySQL
+  keycloak:
+#    image: jboss/keycloak:3.4.3.Final
+    image: jboss/keycloak
+    container_name: keycloak
+    environment:
+      PROXY_ADDRESS_FORWARDING: ${PROXY_ADDRESS_FORWARDING}
+      VIRTUAL_HOST: ${KEYCLOAK_VIRTUAL_HOST}
+      DB_VENDOR: ${MYSQL_VENDOR}
+      DB_ADDR: ${MYSQL_ADDR}
+      DB_DATABASE: ${MYSQL_DB}
+      DB_USER: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      KEYCLOAK_USER: ${KEYCLOAK_USER}
+      KEYCLOAK_PASSWORD: ${KEYCLOAK_PASSWORD}
+      JDBC_PARAMS: "useSSL=false"
+# Configuration for 3.4.3
+      MYSQL_PORT_3306_TCP_ADDR: ${MYSQL_TCP_ADDR}
+      MYSQL_PORT_3306_TCP_PORT: ${MYSQL_TCP_PORT}
+    volumes: 
+      - ${CONFIG_FOLDER}/log/keycloak:/opt/jboss/keycloak/standalone/log
+    ports:
+      - 8080:8080
+    depends_on:
+      mysql:
+          condition: service_healthy
+    depends_on:
+      - mysql
+    restart: always
+# KeyCloak proxy to authenticate Kibana
+  keycloak-proxy:
+    image: jboss/keycloak-proxy:3.4.2.Final
+#    image: jboss/keycloak-proxy
+    container_name: keycloak-proxy
+    environment: 
+      PROXY_ADDRESS_FORWARDING: ${PROXY_ADDRESS_FORWARDING}
+      VIRTUAL_HOST: ${KEYCLOAK_PROXY_VIRTUAL_HOST}
+      VIRTUAL_PORT: ${KEYCLOAK_PROXY_VIRTUAL_PORT}
+      TARGET_URL: ${KEYCLOAK_PROXY_TARGET_URL}
+      BIND_ADDRESS: ${KEYCLOAK_PROXY_BIND_ADDRESS}
+      HTTP_PORT: ${KEYCLOAK_PROXY_HTTP_PORT}
+      BASE_PATH: ${KEYCLOAK_PROXY_BASE_PATH}
+      REALM_NAME: ${KEYCLOAK_PROXY_REALM_NAME}
+      AUTH_SERVER_URL: ${KEYCLOAK_PROXY_AUTH_SERVER}
+      CLIENT_ID: ${KEYCLOAK_PROXY_CLIENT_ID}
+      ROLE_ALLOWED: ${KEYCLOAK_PROXY_ROLE_ALLOWED}
+      SSL_REQUIRED: ${KEYCLOAK_PROXY_SSL_REQUIRED}
+    volumes: 
+      - ${CONFIG_FOLDER}/elk/keycloak/conf/proxy.json:/opt/jboss/conf/proxy.json
+    ports:
+      - 8180:8180
+    depends_on:
+      - kibana
+      - keycloak
+    restart: always
+# Elasticsearch instance
+  elasticsearch:
+    container_name: elasticsearch
+    image: elasticsearch:6.4.2
+    environment: ['http.host=0.0.0.0', 'transport.host=127.0.0.1', 'ELASTIC_PASSWORD=${ES_PASSWORD}', 'ES_JAVA_OPTS=-Xms${ES_JVM_HEAP} -Xmx${ES_JVM_HEAP}']
+    ports:
+      - "9200:9200"
+    volumes:
+      - ${CONFIG_FOLDER}/elasticsearch/data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl","-s" ,"-f", "-u", "elasticsearch:${ES_PASSWORD}", "http://localhost:9200/_cat/health"]
+    restart: always
+# Elastalert server for managing alerts in Kibana
+  elastalert:
+    container_name: elastalert
+    image: bitsensor/elastalert:latest
+    ports:
+      - "3030:3030"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ${CONFIG_FOLDER}/elk/elastalert/config/elastalert.yaml:/opt/elastalert/config.yaml
+      - ${CONFIG_FOLDER}/elk/elastalert/config/config.json:/opt/elastalert-server/config/config.json
+      - ${CONFIG_FOLDER}/elk/elastalert/rules:/opt/elastalert/rules
+      - ${CONFIG_FOLDER}/elk/elastalert/rule_templates:/opt/elastalert/rule_template
+    depends_on:
+      - elasticsearch
+    restart: always
+# Logstash to process the logs gathered from the shared volumes. Services should leave the log in this volume
+  logstash:
+    container_name: logstash
+    build: ./logstash
+    depends_on:
+      elasticsearch:
+          condition: service_healthy
+    environment:
+      ELASTICSEARCH_USERNAME: elasticsearch
+      ELASTICSEARCH_PASSWORD: ${ES_PASSWORD}
+    volumes:
+      - ${CONFIG_FOLDER}/log:/log
+    depends_on:
+      - elasticsearch
+    restart: always
+# Kibana GUI to monitor the information processed in elasticsearch
+  kibana:
+    container_name: kibana
+#    image: kibana:6.4.2
+    build: ./kibana
+    depends_on:
+      elasticsearch:
+          condition: service_healthy
+    volumes:
+      - ${CONFIG_FOLDER}/elk/kibana/config/kibana.yml:/usr/share/kibana/config/kibana.yml
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=4096"
+      ELASTICSEARCH_USERNAME: elasticsearch
+      ELASTICSEARCH_PASSWORD: ${ES_PASSWORD}
+      ELASTICSEARCH_HOST: elasticsearch
+    depends_on:
+      - elasticsearch
+      - elastalert
+    ports:
+      - "5601:5601"
+    restart: always
+# Portainer container visualization tool 
+  portainer:
+    container_name: portainer
+    image: portainer/portainer
+    environment:
+      PROXY_ADDRESS_FORWARDING: ${PROXY_ADDRESS_FORWARDING}
+      VIRTUAL_HOST: ${PORTAINER_VIRTUAL_HOST}
+    volumes:
+      - ${CONFIG_FOLDER}/portainer/data:/data
+    command: "-H tcp://192.168.99.100:2376"
+#    command: -H tcp://192.168.99.100:4243
+#    restart: always
