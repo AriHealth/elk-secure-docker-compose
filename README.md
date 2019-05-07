@@ -32,6 +32,10 @@ Nginx is used as reverse proxy. For testing, port 80 and simple names are used: 
 
 # How to deploy
 
+[Install Docker CE](https://docs.docker.com/install/). For Windows and Mac a [docker toolbox desktop is available](https://docs.docker.com/toolbox/overview/). Remember that Docker toolbox is published at 192.168.100.99 (`user: docker, password: tcuser`)
+
+**Tip**: To avoid performance issues, increment VirtualBox default VM memmory to 4g
+
 Deploy using docker-compose:
 
 ```
@@ -42,38 +46,52 @@ Launch the containers (dettached)
 docker-compose up -d
 ```
 
-ERRORS
+**IDENTIFIED ERRORS**
 
 - [Elasticsearch insufficient memmory](https://github.com/docker-library/elasticsearch/issues/133). "max virtual memory areas vm.max_map_count [65530] likely too low, increase to at least [262144]".
-**Solution**, In the docker host execute `sysctl -w vm.max_map_count=262144`
+
+  **Solution**, In the docker host execute `sysctl -w vm.max_map_count=262144`
 
 - [Kibana plugin install stalls at `Optimizing and caching browser bundles...`](https://github.com/elastic/kibana/issues/19678)
-**Solution**, add `NODE_OPTIONS="--max-old-space-size=4096"` to Kibana container as environment variable.
+
+  **Solution**, add `NODE_OPTIONS="--max-old-space-size=4096"` to Kibana container as environment variable.
 
 - [The elastalert plug in is not showing up in Kibana UI for 6.5.4](https://github.com/bitsensor/elastalert-kibana-plugin/issues/86)
-**Solution**, downgrade to Kibana version 6.4.2.
+
+  **Solution**, downgrade to Kibana version 6.4.2.
 
 # How to use
 
 [Environments](https://docs.docker.com/compose/environment-variables/) are used to configure the installation. Modify the `.env` to comply your needs.
 
-To access Kibana, firstly you need to validate with user and password. 
+To access Kibana, firstly you need to validate with a user and password created in KeyCloak and assigned to a realm. To configure the realm on KeyCloak access to:
 
-**IMPORTANT!** Login to KeyCloak (See the .env file -> user: admin password: Pa55w0rd). Create a realm "kibana", with a client id "kibana" in KeyCloak. Be sure to fill in Valid Redirect URI to http://localhost:8080/* (or http://keycloak/*). Create a user in the new realm for testing, for instance (kibana).
 ```
 	http://localhost:8080/ (or http://keycloak/)
 ```
 
-Then you can access to 
+- Login with `user: admin password: Pa55w0rd` (if needed, modify the `.env` file to change the values). 
+- Create a realm `kibana`, with a client id `kibana`. 
+- Be sure to fill in Valid Redirect URI to `http://localhost:8080/*` (or `http://keycloak/*`). 
+- Create a user in the new realm for testing, for instance `kibana`.
+
+Then you can access to Kibana through the proxy:
 ```
     http://localhost:8081 (or http://monitor)
 ```
 
 The nginx reverse proxy allows also accessing using domains: monitor, portainer and keycloak (if you redirect the domains to localhost or the IP where you are deploying the containers).
 
+**Tip**: if you are using Docker toolbox point the domains to IP 192.168.99.100.
+
+```
+192.168.99.100 keycloak
+192.168.99.100 monitor
+```
+
 # How to contribute
 
-Features and bug fixes are more than welcome. They must be linked to an issue, so the first step before contributing is the creation of a [GitHub issue](https://github.com/carloscaverobarca/elk-secure-docker-compose/issues).
+Features and bug fixes are more than welcome. They must be linked to an issue, so the first step before contributing is the creation of a [GitHub issue](https://github.com/arihealth/elk-secure-docker-compose/issues).
 
 # External resources
 
