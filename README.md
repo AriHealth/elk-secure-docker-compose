@@ -14,7 +14,7 @@ The repository provides the docker compose scripts to provide an ELK installatio
 The software is prepared for production with the following architecture (letsencrypt for https). KeyCloak Proxy is used to foce Kibana access to login through the Identity Management (KeyCloak):
 
 <p align="center">
-	<img width="460" height="300" src="img/elk-deployment.jpg">
+	<img src="img/elk-deployment.jpg">
 </p>
 
 Nginx is used as reverse proxy. For testing, port 80 and simple names are used: keycloak, monitor (with keycloak proxy redirection to kibana dashboard) and portainer. For production the port must be changed to 443, and letsencrypt must be used to provide the https certs. You should change the suitable domains and configuration details in the .env file and uncomment docker-compose.yml code before deploying the containers.
